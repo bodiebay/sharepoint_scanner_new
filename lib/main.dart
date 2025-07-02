@@ -1,281 +1,396 @@
 import 'package:flutter/material.dart';
-import 'package:webview_flutter/webview_flutter.dart';
-import 'dart:async';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:sharepoint_scanner_new/services/auth_service.dart';
 
 void main() {
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'SharePoint Scanner',
-      home: SharePointLoginScreen(),
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+      ),
+      routes: {
+        '/': (context) => const SharePointLoginScreen(),
+        '/scanner': (context) => const BarcodeScannerScreen(),
+        '/result': (context) => const ScanResultScreen(),
+      },
+      initialRoute: '/',
     );
   }
 }
 
 class SharePointLoginScreen extends StatefulWidget {
+  const SharePointLoginScreen({super.key});
+
   @override
-  _SharePointLoginScreenState createState() => _SharePointLoginScreenState();
+  State<SharePointLoginScreen> createState() => _SharePointLoginScreenState();
 }
 
 class _SharePointLoginScreenState extends State<SharePointLoginScreen> {
-  late WebViewController _controller;
+  final _authService = AuthService();
   bool _isLoading = false;
-  bool _isAuthenticated = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (String url) {
-            setState(() {
-              _isLoading = true;
-            });
-          },
-          onPageFinished: (String url) {
-            setState(() {
-              _isLoading = false;
-            });
-          },
-          onNavigationRequest: (NavigationRequest request) {
-            print('Navigation request: ${request.url}');
-            
-            if (request.url.startsWith('msauth://com.aaronwalker.inventoryscannernew/auth')) {
-              print('🎯 OAuth redirect detected!');
-              _handleOAuthRedirect(request.url);
-              return NavigationDecision.prevent;
-            }
-            
-            return NavigationDecision.navigate;
-          },
-        ),
-      );
+    _checkAuthStatus();
   }
 
-  void _handleOAuthRedirect(String url) {
-    try {
-      final uri = Uri.parse(url);
-      final code = uri.queryParameters['code'];
-      final error = uri.queryParameters['error'];
-      
-      if (error != null) {
-        _showErrorDialog('Authentication failed', 'Error: $error');
-      } else if (code != null) {
-        setState(() {
-          _isAuthenticated = true;
-        });
-        // IMMEDIATE SUCCESS - No delay!
-        _showSuccessDialog(code);
-      } else {
-        _showErrorDialog('Invalid Response', 'No authorization code received');
-      }
-    } catch (e) {
-      _showErrorDialog('Parse Error', 'Failed to parse OAuth response: $e');
-    }
-  }
-
-  void _showSuccessDialog(String code) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.check_circle, color: Colors.green, size: 28),
-              SizedBox(width: 8),
-              Text('Success!'),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('✅ Authentication completed!'),
-              SizedBox(height: 12),
-              Text('Ready to build your SharePoint scanner app!'),
-            ],
-          ),
-          actions: [
-            ElevatedButton.icon(
-              onPressed: () {
-                Navigator.pop(context);
-                _navigateToMainApp(code);
-              },
-              icon: Icon(Icons.rocket_launch),
-              label: Text('Start Building!'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _resetLogin();
-              },
-              child: Text('Login Again'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _showErrorDialog(String title, String message) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Row(
-            children: [
-              Icon(Icons.error, color: Colors.red),
-              SizedBox(width: 8),
-              Text(title),
-            ],
-          ),
-          content: Text(message),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(context);
-                _resetLogin();
-              },
-              child: Text('Try Again'),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  void _navigateToMainApp(String authCode) {
-    // Store the auth code for later use
-    print('🎯 Auth code ready: ${authCode.substring(0, 30)}...');
+  Future<void> _checkAuthStatus() async {
+    setState(() => _isLoading = true);
     
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text('🎉 OAuth Setup Complete!'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Your SharePoint Scanner is ready!'),
-              SizedBox(height: 16),
-              Text('Next steps:', style: TextStyle(fontWeight: FontWeight.bold)),
-              Text('• Build barcode scanning screen'),
-              Text('• Add SharePoint list integration'),
-              Text('• Implement inventory updates'),
-              SizedBox(height: 16),
-              Container(
-                padding: EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.green[50],
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.green[200]!),
-                ),
-                child: Text(
-                  'OAuth working perfectly! ✅',
-                  style: TextStyle(color: Colors.green[800]),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text('Awesome!'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        );
-      },
-    );
+    final isAuthenticated = await _authService.initialize();
+    
+    if (isAuthenticated) {
+      _navigateToMainApp();
+    }
+    
+    setState(() => _isLoading = false);
   }
 
-  void _resetLogin() {
-    setState(() {
-      _isAuthenticated = false;
-      _isLoading = false;
-    });
+  Future<void> _login() async {
+    setState(() => _isLoading = true);
+    
+    final success = await _authService.login(context);
+    
+    if (success && _authService.isAuthenticated) {
+      _authService.showSuccessDialog(context, _navigateToMainApp);
+    }
+    
+    setState(() => _isLoading = false);
   }
 
-  void _login() {
-    setState(() {
-      _isLoading = true;
-    });
-
-    final authUrl = 'https://login.microsoftonline.com/873ebc3c-13b9-43e6-865c-1e26b0185b40/oauth2/v2.0/authorize'
-        '?client_id=3c82ea21-fb37-4e3d-bbe2-bd4dc7237185'
-        '&response_type=code'
-        '&redirect_uri=msauth://com.aaronwalker.inventoryscannernew/auth'
-        '&response_mode=query'
-        '&scope=https://graph.microsoft.com/Sites.ReadWrite.All offline_access'
-        '&state=12345';
-
-    _controller.loadRequest(Uri.parse(authUrl));
+  void _navigateToMainApp() {
+    // Navigate to the barcode scanner screen
+    Navigator.pushReplacementNamed(context, '/scanner');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('SharePoint Scanner'),
+        title: const Text('SharePoint Scanner'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
       ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text(
+              'Welcome to SharePoint Scanner',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Scan barcodes and update SharePoint lists easily',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey,
+              ),
+            ),
+            const SizedBox(height: 40),
+            if (_isLoading)
+              const CircularProgressIndicator()
+            else
+              ElevatedButton.icon(
+                onPressed: _login,
+                icon: const Icon(Icons.login),
+                label: const Text('Login with Microsoft'),
+                style: ElevatedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Real barcode scanner implementation using mobile_scanner
+class BarcodeScannerScreen extends StatefulWidget {
+  const BarcodeScannerScreen({super.key});
+
+  @override
+  State<BarcodeScannerScreen> createState() => _BarcodeScannerScreenState();
+}
+
+class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
+  MobileScannerController controller = MobileScannerController(
+    detectionSpeed: DetectionSpeed.normal,
+    facing: CameraFacing.back,
+    torchEnabled: false,
+  );
+
+  bool _isProcessing = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan Barcode'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: ValueListenableBuilder(
+              valueListenable: controller.torchState,
+              builder: (context, state, child) {
+                return Icon(
+                  state == TorchState.off ? Icons.flash_off : Icons.flash_on,
+                );
+              },
+            ),
+            onPressed: () => controller.toggleTorch(),
+          ),
+          IconButton(
+            icon: ValueListenableBuilder(
+              valueListenable: controller.cameraFacingState,
+              builder: (context, state, child) {
+                return Icon(
+                  state == CameraFacing.front
+                      ? Icons.camera_front
+                      : Icons.camera_rear,
+                );
+              },
+            ),
+            onPressed: () => controller.switchCamera(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () {
+              AuthService().logout().then((_) {
+                Navigator.pushReplacementNamed(context, '/');
+              });
+            },
+          ),
+        ],
+      ),
       body: Column(
         children: [
-          Container(
-            padding: EdgeInsets.all(16),
-            color: Colors.blue[50],
-            child: Column(
-              children: [
-                Text(
-                  _isAuthenticated 
-                    ? '✅ Authentication successful!'
-                    : 'Sign in to access SharePoint',
-                  style: TextStyle(fontSize: 16),
-                ),
-                SizedBox(height: 12),
-                ElevatedButton.icon(
-                  onPressed: (_isLoading || _isAuthenticated) ? null : _login,
-                  icon: Icon(_isAuthenticated ? Icons.check : Icons.login),
-                  label: Text(
-                    _isAuthenticated 
-                      ? 'Authenticated ✅'
-                      : _isLoading 
-                        ? 'Signing In...' 
-                        : 'Sign In with Microsoft'
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _isAuthenticated ? Colors.green : Colors.blue,
-                    foregroundColor: Colors.white,
-                  ),
-                ),
-                if (_isLoading) 
-                  Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: LinearProgressIndicator(),
-                  ),
-              ],
+          Expanded(
+            child: MobileScanner(
+              controller: controller,
+              onDetect: (capture) {
+                if (_isProcessing) return;
+                _isProcessing = true;
+
+                final barcodes = capture.barcodes;
+                if (barcodes.isNotEmpty) {
+                  final barcode = barcodes.first;
+                  final code = barcode.rawValue;
+                  if (code != null) {
+                    _handleBarcode(code);
+                  }
+                }
+              },
             ),
           ),
-          Expanded(
-            child: WebViewWidget(controller: _controller),
+          Container(
+            color: Colors.black.withOpacity(0.1),
+            padding: const EdgeInsets.all(16),
+            child: const Text(
+              'Position the barcode within the scanner frame',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16, 
+                color: Colors.black87,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+  void _handleBarcode(String code) {
+    // Navigate to result screen with the scanned code
+    Navigator.pushNamed(
+      context,
+      '/result',
+      arguments: code,
+    ).then((_) {
+      _isProcessing = false;
+    });
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+}
+
+// Screen to display scan results and handle SharePoint updates
+class ScanResultScreen extends StatefulWidget {
+  const ScanResultScreen({super.key});
+
+  @override
+  State<ScanResultScreen> createState() => _ScanResultScreenState();
+}
+
+class _ScanResultScreenState extends State<ScanResultScreen> {
+  bool _isUploading = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final scannedCode = ModalRoute.of(context)!.settings.arguments as String;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Scan Result'),
+        backgroundColor: Colors.blue,
+        foregroundColor: Colors.white,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Scanned Barcode:',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.grey),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              width: double.infinity,
+              child: Text(
+                scannedCode,
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+            const SizedBox(height: 32),
+            const Text(
+              'Item Information:',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            // This is where you would display item information from SharePoint
+            // For now, we'll just show some example fields
+            _buildInfoField('Item Type', 'Office Equipment'),
+            _buildInfoField('Location', 'Main Office'),
+            _buildInfoField('Status', 'In Stock'),
+            _buildInfoField('Last Updated', '2025-07-01'),
+            const SizedBox(height: 24),
+            Center(
+              child: _isUploading
+                  ? const CircularProgressIndicator()
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            _updateSharePointList(scannedCode);
+                          },
+                          icon: const Icon(Icons.cloud_upload),
+                          label: const Text('Update SharePoint'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          icon: const Icon(Icons.qr_code_scanner),
+                          label: const Text('Scan Another'),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoField(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 120,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _updateSharePointList(String scannedCode) async {
+    setState(() {
+      _isUploading = true;
+    });
+
+    try {
+      // Simulate an API call to update SharePoint
+      await Future.delayed(const Duration(seconds: 2));
+
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('SharePoint list updated successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      
+      // Return to scanner screen after successful update
+      Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error updating SharePoint: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+        });
+      }
+    }
   }
 }

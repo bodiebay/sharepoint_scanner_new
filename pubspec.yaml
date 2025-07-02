@@ -11,7 +11,7 @@ dependencies:
   flutter:
     sdk: flutter
   cupertino_icons: ^1.0.6
-  mobile_scanner: ^3.5.5
+  mobile_scanner: ^4.0.1
   barcode_widget: ^2.0.4
   dio: ^5.4.0
   oauth2: ^2.0.3
@@ -39,5 +39,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
-  mobile_scanner: ^5.0.0
-  permission_handler: ^11.3.1
